@@ -1,16 +1,16 @@
 import {
   computed,
   getCurrentScope,
-  MaybeRefOrGetter,
+  type MaybeRefOrGetter,
   onScopeDispose,
   readonly,
-  Ref,
+  type Ref,
   ref,
   toValue,
   watch,
 } from 'vue';
 import { catchError, serializeKey } from '@/utils';
-import { FetchStatus, QueryStatus, UseQueryOptions } from '../../types';
+import type { FetchStatus, QueryStatus, UseQueryOptions } from '@/types';
 import { queryClient } from '../QueryCache';
 
 function createEventHook<T extends (...args: any[]) => any>() {

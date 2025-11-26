@@ -1,4 +1,4 @@
-import { Ref, type MaybeRefOrGetter } from 'vue';
+import type { Ref, MaybeRefOrGetter } from 'vue';
 
 export type QueryStatus = 'pending' | 'success' | 'error';
 export type FetchStatus = 'fetching' | 'paused' | 'idle';
