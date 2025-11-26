@@ -7,10 +7,18 @@ import { defineConfig } from 'eslint/config';
 //
 export default defineConfig([
   {
-    ignores: ['dist/*', 'node_modules/*'],
+    ignores: ['dist/*', 'node_modules/*', '*.config.ts', '*.config.js'],
   },
 
-  { languageOptions: { globals: { ...globals.browser, ...globals.node } } },
+  {
+    languageOptions: {
+      globals: { ...globals.browser, ...globals.node },
+      parserOptions: {
+        project: './tsconfig.json',
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+  },
 
   pluginsJs.configs.recommended,
   ...tseslint.configs.recommended,
@@ -22,6 +30,14 @@ export default defineConfig([
         'error',
         { argsIgnorePattern: '^_' },
       ],
+      '@typescript-eslint/consistent-type-imports': [
+        'error',
+        {
+          prefer: 'type-imports', // always use type imports
+          fixStyle: 'inline-type-imports',
+        },
+      ],
+      '@typescript-eslint/consistent-type-exports': 'error',
     },
   },
 

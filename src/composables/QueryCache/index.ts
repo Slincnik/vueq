@@ -1,5 +1,5 @@
 import { reactive } from 'vue';
-import { CacheEntry } from '@/types';
+import type { CacheEntry } from '@/types';
 import { serializeKey } from '@/utils';
 
 type QueryEventType = 'added' | 'updated' | 'removed';
