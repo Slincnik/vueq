@@ -63,6 +63,24 @@ const { data, isLoading, isError, error, refetch } = useFetch<Todo>(
 </template>
 ```
 
+## DevTools Support 🛠
+
+Inspect your cache, queries, and errors directly in Vue DevTools.
+
+```typescript
+// main.ts
+import { createApp } from 'vue';
+import { VueQDevtools } from '@slincnik/vueq';
+import App from './App.vue';
+
+const app = createApp(App);
+
+// Enable DevTools
+app.use(VueQDevtools);
+
+app.mount('#app');
+```
+
 ## API Reference
 
 ### `useFetch(key, fetcher, options?)`
