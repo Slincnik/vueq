@@ -1,6 +1,7 @@
-import { defineConfig } from "vite";
-import vue from "@vitejs/plugin-vue";
-import dts from "vite-plugin-dts";
+import { defineConfig } from 'vite';
+import vue from '@vitejs/plugin-vue';
+import dts from 'vite-plugin-dts';
+import path from 'node:path';
 
 export default defineConfig({
   plugins: [
@@ -12,21 +13,21 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      "@": "/src",
+      '@': path.resolve(__dirname, 'src'),
     },
   },
   build: {
     lib: {
-      entry: "./src/index.ts",
-      name: "Vueq",
+      entry: './src/index.ts',
+      name: 'Vueq',
       fileName: (format) => `index.${format}.js`,
-      formats: ["es"],
+      formats: ['es'],
     },
     rollupOptions: {
-      external: ["vue"],
+      external: ['vue'],
       output: {
         globals: {
-          vue: "Vue",
+          vue: 'Vue',
         },
       },
     },
