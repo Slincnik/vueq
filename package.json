@@ -32,6 +32,7 @@
     "@commitlint/cli": "^20.1.0",
     "@commitlint/config-conventional": "^20.0.0",
     "@eslint/js": "^9.39.1",
+    "@types/node": "^24.10.1",
     "@vitejs/plugin-vue": "^6.0.2",
     "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.1.8",
@@ -58,5 +59,8 @@
     "*.{json,md,yml}": [
       "prettier --write"
     ]
+  },
+  "dependencies": {
+    "@vue/devtools-api": "^8.0.5"
   }
 }

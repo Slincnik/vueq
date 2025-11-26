@@ -1,24 +1,55 @@
 import { reactive } from 'vue';
-import { CacheEntry } from '../../types';
-import { serializeKey } from '../../utils';
+import { CacheEntry } from '@/types';
+import { serializeKey } from '@/utils';
+
+type QueryEventType = 'added' | 'updated' | 'removed';
+
+type QueryListener = (event: {
+  type: QueryEventType;
+  key: string;
+  entry?: CacheEntry;
+}) => void;
 
 class QueryClient {
   public entries = reactive<Record<string, CacheEntry>>({});
 
   private gcTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 
+  private listeners = new Set<QueryListener>();
+
+  /**
+   * Subscribe to cache changes.
+   * Useful for DevTools or custom loggers.
+   */
+  subscribe(listener: QueryListener) {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  private notify(type: QueryEventType, key: string, entry?: CacheEntry) {
+    this.listeners.forEach((listener) => listener({ type, key, entry }));
+  }
+
   getEntry<T>(key: string | readonly any[]): CacheEntry<T> | undefined {
     return this.entries[serializeKey(key)] as CacheEntry<T> | undefined;
   }
 
   setEntry<T>(key: string | readonly any[], data: CacheEntry<T>) {
-    this.entries[serializeKey(key)] = data;
+    const sKey = serializeKey(key);
+    const isNew = !this.entries[sKey];
+    this.entries[sKey] = data;
+
+    // Уведомляем
+    this.notify(isNew ? 'added' : 'updated', sKey, data);
   }
 
   removeEntry(key: string | readonly any[]) {
     const sKey = serializeKey(key);
     this.clearGcTimeout(sKey);
     delete this.entries[sKey];
+    this.notify('removed', sKey);
   }
 
   updateSubscribers(
@@ -31,6 +62,8 @@ class QueryClient {
     if (!entry) return;
 
     entry.subscribers = count;
+
+    this.notify('updated', sKey, entry);
 
     if (entry.subscribers <= 0) {
       this.scheduleGc(sKey, cacheTime);
