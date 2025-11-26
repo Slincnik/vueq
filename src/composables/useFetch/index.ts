@@ -1,0 +1,336 @@
+import {
+  computed,
+  getCurrentScope,
+  MaybeRefOrGetter,
+  onScopeDispose,
+  readonly,
+  Ref,
+  ref,
+  toValue,
+  watch,
+} from 'vue';
+import { catchError, serializeKey } from '@/utils';
+import { FetchStatus, QueryStatus, UseQueryOptions } from '../../types';
+import { queryClient } from '../QueryCache';
+
+function createEventHook<T extends (...args: any[]) => any>() {
+  const fns = new Set<T>();
+
+  const on = (fn: T) => {
+    fns.add(fn);
+    if (getCurrentScope()) {
+      onScopeDispose(() => fns.delete(fn));
+    }
+
+    return () => fns.delete(fn);
+  };
+
+  const trigger = (...args: Parameters<T>) => {
+    fns.forEach((fn) => fn(...args));
+  };
+
+  return { on, trigger };
+}
+
+async function runFetcher<T>(
+  fetcher: () => Promise<T>,
+  retry: number,
+  retryDelay: number
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= retry; attempt++) {
+    const [err, data] = await catchError(fetcher());
+    if (!err) return data as T;
+    lastError = err;
+    if (attempt < retry) await new Promise((r) => setTimeout(r, retryDelay));
+  }
+  throw lastError;
+}
+
+const requestPromises = new Map<string, Promise<void>>();
+
+export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
+  queryKey: string | readonly any[] | MaybeRefOrGetter<string | readonly any[]>,
+  fetcher: (signal?: AbortSignal) => Promise<TData>,
+  options: UseQueryOptions<TData, TSelected> = {}
+) {
+  const key = computed(() => serializeKey(toValue(queryKey)));
+  const {
+    enabled = true,
+    initialData,
+    staleTime = 0,
+    cacheTime = 5 * 60 * 1000, // 5 min
+    retry = 3,
+    retryDelay = 1000,
+    select,
+    onSettled,
+    onError,
+    onSuccess,
+    onSynced,
+    refetchOnKeyChange = true,
+    enableAutoSyncCache = true,
+  } = options;
+
+  const successEvent = createEventHook<(data: TSelected) => void>();
+  const errorEvent = createEventHook<(err: TError) => void>();
+  const settledEvent = createEventHook<(d?: TSelected, e?: TError) => void>();
+
+  const getSelectedData = (rawData: TData): TSelected => {
+    return select ? select(rawData) : (rawData as unknown as TSelected);
+  };
+
+  const getInitialState = () => {
+    const entry = queryClient.getEntry(key.value);
+    if (entry?.data !== undefined) return getSelectedData(entry.data as TData);
+    if (initialData !== undefined) return getSelectedData(initialData);
+    return undefined;
+  };
+
+  const data = ref<TSelected | undefined>(getInitialState());
+  const currentEntry = computed(() => queryClient.getEntry(key.value));
+
+  const status = computed<QueryStatus>(
+    () => currentEntry.value?.status ?? 'pending'
+  );
+  const fetchStatus = computed<FetchStatus>(
+    () => currentEntry.value?.fetchStatus ?? 'idle'
+  );
+  const error = computed<TError | undefined>(
+    () => currentEntry.value?.error as TError
+  );
+
+  const isLoading = computed(() => status.value === 'pending');
+  const isError = computed(() => status.value === 'error');
+  const isSuccess = computed(() => status.value === 'success');
+  const isFetching = computed(() => fetchStatus.value === 'fetching');
+  const isEnabled = computed(() => toValue(enabled));
+
+  const isStale = computed(() => {
+    const entry = currentEntry.value;
+    if (!entry || entry.data === undefined) return true;
+    return Date.now() - entry.updatedAt > staleTime;
+  });
+
+  const updateEntry = (
+    partial: Partial<typeof currentEntry.value>,
+    newKey?: string
+  ) => {
+    const entry = queryClient.entries[newKey ?? key.value];
+    if (entry) {
+      queryClient.setEntry(key.value, { ...entry, ...partial });
+    }
+  };
+
+  let abortController: AbortController | undefined;
+
+  async function internalFetch(force = false) {
+    const fetchKey = key.value;
+    if (!isEnabled.value && !force) return;
+
+    if (
+      requestPromises.has(fetchKey) &&
+      currentEntry.value?.fetchStatus === 'fetching'
+    ) {
+      return requestPromises.get(fetchKey);
+    }
+
+    const entry = queryClient.getEntry(fetchKey);
+    const isEntryStale =
+      !entry ||
+      entry.data === undefined ||
+      Date.now() - entry.updatedAt >= staleTime;
+
+    if (!force && !isEntryStale) return;
+
+    abortController?.abort();
+    abortController = new AbortController();
+
+    if (!entry) {
+      queryClient.setEntry(fetchKey, {
+        data: undefined,
+        error: null,
+        status: 'pending',
+        fetchStatus: 'fetching',
+        updatedAt: 0,
+        cacheTime,
+        subscribers: 1,
+      });
+    } else {
+      updateEntry(
+        {
+          fetchStatus: 'fetching',
+          error: 'null',
+        },
+        fetchKey
+      );
+    }
+
+    const promise = (async () => {
+      try {
+        const result = await runFetcher(
+          () => fetcher(abortController?.signal),
+          retry,
+          retryDelay
+        );
+
+        // Успех
+        const prevEntry = queryClient.getEntry(fetchKey);
+        queryClient.setEntry(fetchKey, {
+          ...prevEntry!,
+          data: result,
+          error: null,
+          status: 'success',
+          fetchStatus: 'idle',
+          updatedAt: Date.now(),
+          cacheTime,
+        });
+
+        const selected = getSelectedData(result);
+        data.value = selected;
+        onSuccess?.(selected);
+        successEvent.trigger(selected);
+      } catch (err) {
+        updateEntry(
+          {
+            status: 'error',
+            fetchStatus: 'idle',
+            error: err as TError,
+          },
+          fetchKey
+        );
+        onError?.(err);
+        errorEvent.trigger(err as TError);
+      } finally {
+        requestPromises.delete(fetchKey);
+        onSettled?.(data.value, error.value);
+        settledEvent.trigger(data.value, error.value);
+      }
+    })();
+
+    requestPromises.set(fetchKey, promise);
+    return promise;
+  }
+
+  const refetch = (force = false) => internalFetch(force);
+  const invalidate = () => {
+    updateEntry({ updatedAt: 0 });
+    internalFetch();
+  };
+
+  const setData = (updater: TData | ((prev?: TData) => TData | undefined)) => {
+    const func =
+      typeof updater === 'function'
+        ? (updater as (prev?: TData) => TData)
+        : () => updater;
+
+    queryClient.updateEntry<TData>(key.value, func);
+  };
+
+  watch(
+    key,
+    (newKey, oldKey) => {
+      if (oldKey) {
+        const oldEntry = queryClient.getEntry(oldKey);
+        if (oldEntry)
+          queryClient.updateSubscribers(
+            oldKey,
+            oldEntry.subscribers - 1,
+            cacheTime
+          );
+      }
+      if (newKey) {
+        const entry = queryClient.getEntry(newKey);
+        if (!entry) {
+          queryClient.setEntry(newKey, {
+            data: initialData,
+            error: null,
+            status: initialData !== undefined ? 'success' : 'pending',
+            fetchStatus: 'idle',
+            updatedAt: initialData !== undefined ? Date.now() : 0,
+            cacheTime,
+            subscribers: 1,
+          });
+        } else {
+          queryClient.updateSubscribers(
+            newKey,
+            entry.subscribers + 1,
+            cacheTime
+          );
+        }
+      }
+    },
+    { immediate: true }
+  );
+
+  watch(
+    [key, isEnabled],
+    ([newKey, newEnabled], [oldKey]) => {
+      if (!newEnabled) return;
+      const entry = queryClient.getEntry(newKey);
+      const isKeyChanged = newKey !== oldKey;
+
+      const shouldFetch =
+        (isKeyChanged && refetchOnKeyChange) ||
+        !entry ||
+        (entry.status === 'pending' &&
+          entry.fetchStatus === 'idle' &&
+          entry.updatedAt === 0) ||
+        (entry.data !== undefined && Date.now() - entry.updatedAt >= staleTime);
+
+      if (shouldFetch) {
+        internalFetch();
+      } else if (entry?.data !== undefined) {
+        data.value = getSelectedData(entry.data as TData);
+      }
+    },
+    { immediate: true }
+  );
+
+  watch(
+    () => [
+      queryClient.entries[key.value]?.data,
+      queryClient.entries[key.value]?.updatedAt,
+    ],
+    ([newData, newUpdated], [oldData, oldUpdated]) => {
+      if (!enableAutoSyncCache) return;
+      if (
+        newData !== undefined &&
+        (newData !== oldData || newUpdated !== oldUpdated)
+      ) {
+        data.value = getSelectedData(newData as TData);
+        onSynced?.(data.value!);
+      }
+    }
+  );
+
+  onScopeDispose(() => {
+    const k = key.value;
+    const entry = queryClient.getEntry(k);
+    if (entry) {
+      queryClient.updateSubscribers(
+        k,
+        Math.max(0, entry.subscribers - 1),
+        cacheTime
+      );
+    }
+    abortController?.abort();
+  });
+
+  return {
+    data: data as Ref<TSelected | undefined>,
+    error,
+    status: readonly(status),
+    fetchStatus: readonly(fetchStatus),
+    isLoading: readonly(isLoading),
+    isFetching: readonly(isFetching),
+    isError: readonly(isError),
+    isSuccess: readonly(isSuccess),
+    isStale,
+    refetch,
+    invalidate,
+    setData,
+    onSuccess: successEvent.on,
+    onError: errorEvent.on,
+    onSettled: settledEvent.on,
+  };
+}

@@ -1,0 +1,33 @@
+name: Bug Report 🐞
+description: Create a report to help us improve
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Please provide a Minimal Reproduction (CodeSandbox / StackBlitz link).
+    validations:
+      required: true
+  - type: input
+    id: expected
+    attributes:
+      label: Expected behavior
+  - type: dropdown
+    id: env
+    attributes:
+      label: Environment
+      options:
+        - Vue 3.4+
+        - Vue 3.3
+        - Nuxt
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
