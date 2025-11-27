@@ -23,6 +23,12 @@ yarn add @slincnik/vueq
 
 ## Quick Start
 
+```ts
+import { VueQQueryPlugin } from '@slincnik/vueq';
+const app = createApp(App);
+app.use(VueQQueryPlugin);
+```
+
 ```vue
 <script setup lang="ts">
 import { useFetch } from '@slincnik/vueq';
