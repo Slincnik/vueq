@@ -5,10 +5,12 @@ import type {
   UseMutationReturn,
 } from '@/types';
 import { computed, readonly, ref, type Ref } from 'vue';
+import { useQueryClient } from '../QueryClient';
 
 export function useMutation<TData = unknown, TError = Error, TVariables = void>(
   options: MutationHookOptions<TData, TError, TVariables>
 ): UseMutationReturn<TData, TError, TVariables> {
+  const queryClient = useQueryClient();
   const {
     mutationFn,
     onSuccess: globalOnSuccess,
@@ -57,6 +59,7 @@ export function useMutation<TData = unknown, TError = Error, TVariables = void>(
       await mutateOptions?.onSuccess?.(result, vars);
       await globalOnSuccess?.(result, vars);
 
+      queryClient.config.mutations?.onSuccess?.(result, vars);
       return result;
     } catch (err) {
       const errorObj = err as TError;
@@ -66,11 +69,12 @@ export function useMutation<TData = unknown, TError = Error, TVariables = void>(
 
       await mutateOptions?.onError?.(errorObj, vars);
       await globalOnError?.(errorObj, vars);
-
+      queryClient.config.mutations?.onError?.(errorObj, vars);
       throw err;
     } finally {
       await mutateOptions?.onSettled?.(data.value, error.value, vars);
       await globalOnSettled?.(data.value, error.value, vars);
+      queryClient.config.mutations?.onSettled?.(data.value, error.value, vars);
     }
   }
 

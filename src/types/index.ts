@@ -13,8 +13,24 @@ export type QueryListener = (event: {
 }) => void;
 
 export interface QueryClientConfig {
-  queries?: boolean;
-  mutations?: boolean;
+  queries?: {
+    onSuccess?: (data: unknown, key: string) => void;
+    onError?: (error: unknown, key: string) => void;
+    onSettled?: (
+      data: unknown | undefined,
+      error: unknown | null,
+      key: string
+    ) => void;
+  };
+  mutations?: {
+    onSuccess?: (data: unknown, variables: unknown) => void;
+    onError?: (error: unknown, variables: unknown) => void;
+    onSettled?: (
+      data: unknown | undefined,
+      error: unknown | null,
+      variables: unknown
+    ) => void;
+  };
 }
 
 export interface UseQueryOptions<TData, TSelected = TData> {
