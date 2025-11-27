@@ -1,21 +1,26 @@
-import { reactive } from 'vue';
-import type { CacheEntry } from '@/types';
+import { inject, reactive, type InjectionKey, type Plugin } from 'vue';
+import type {
+  CacheEntry,
+  QueryListener,
+  QueryEventType,
+  QueryClientConfig,
+} from '@/types';
 import { serializeKey } from '@/utils';
 
-type QueryEventType = 'added' | 'updated' | 'removed';
+const QUERY_CLIENT_KEY: InjectionKey<QueryClient> = Symbol('QueryClient');
 
-type QueryListener = (event: {
-  type: QueryEventType;
-  key: string;
-  entry?: CacheEntry;
-}) => void;
-
-class QueryClient {
+export class QueryClient {
   public entries = reactive<Record<string, CacheEntry>>({});
 
   private gcTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 
   private listeners = new Set<QueryListener>();
+
+  public config: QueryClientConfig;
+
+  constructor(config: QueryClientConfig = {}) {
+    this.config = config;
+  }
 
   /**
    * Subscribe to cache changes.
@@ -131,4 +136,17 @@ class QueryClient {
   }
 }
 
-export const queryClient = new QueryClient();
+export const VueQQueryPlugin: Plugin = {
+  install(app, options: QueryClientConfig = {}) {
+    const client = new QueryClient(options);
+    app.provide(QUERY_CLIENT_KEY, client);
+  },
+};
+
+export function useQueryClient(): QueryClient {
+  const client = inject(QUERY_CLIENT_KEY);
+  if (!client) {
+    throw new Error('useQueryClient must be used within a VueQQueryPlugin');
+  }
+  return client;
+}

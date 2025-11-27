@@ -4,6 +4,19 @@ export type QueryStatus = 'pending' | 'success' | 'error';
 export type FetchStatus = 'fetching' | 'paused' | 'idle';
 export type MutationStatus = 'idle' | 'pending' | 'success' | 'error';
 
+export type QueryEventType = 'added' | 'updated' | 'removed';
+
+export type QueryListener = (event: {
+  type: QueryEventType;
+  key: string;
+  entry?: CacheEntry;
+}) => void;
+
+export interface QueryClientConfig {
+  queries?: boolean;
+  mutations?: boolean;
+}
+
 export interface UseQueryOptions<TData, TSelected = TData> {
   enabled?: boolean | MaybeRefOrGetter<boolean>;
   initialData?: TData;

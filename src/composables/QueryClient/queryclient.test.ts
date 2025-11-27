@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { queryClient } from '.';
+import { useQueryClient } from '.';
 import type { CacheEntry } from '@/types';
 
 // Хелпер для быстрого создания объекта записи
@@ -20,7 +20,6 @@ const createMockEntry = (
 describe('QueryClient', () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    queryClient.clear();
   });
 
   afterEach(() => {
@@ -30,6 +29,7 @@ describe('QueryClient', () => {
   it('should set and get cache entries', () => {
     const key = 'test-key';
     const entry = createMockEntry('value');
+    const queryClient = useQueryClient();
 
     queryClient.setEntry(key, entry);
 
@@ -38,11 +38,13 @@ describe('QueryClient', () => {
   });
 
   it('should return undefined for non-existent keys', () => {
+    const queryClient = useQueryClient();
     expect(queryClient.getEntry('404')).toBeUndefined();
   });
 
   it('should remove an entry manually', () => {
     const key = 'to-delete';
+    const queryClient = useQueryClient();
     queryClient.setEntry(key, createMockEntry('data'));
 
     queryClient.removeEntry(key);
@@ -53,6 +55,7 @@ describe('QueryClient', () => {
   it('should schedule Garbage Collection when subscribers reach 0', () => {
     const key = 'gc-test';
     const cacheTime = 1000;
+    const queryClient = useQueryClient();
 
     queryClient.setEntry(key, createMockEntry('data', 1, cacheTime));
 
@@ -72,6 +75,7 @@ describe('QueryClient', () => {
     const key = 'revive-test';
     const cacheTime = 1000;
 
+    const queryClient = useQueryClient();
     queryClient.setEntry(key, createMockEntry('data', 0, cacheTime));
     queryClient.updateSubscribers(key, 0, cacheTime);
 
@@ -89,7 +93,7 @@ describe('QueryClient', () => {
   it('should reset the timer if cacheTime changes or subscribers drop to 0 again', () => {
     const key = 'reset-timer';
     const cacheTime = 1000;
-
+    const queryClient = useQueryClient();
     queryClient.setEntry(key, createMockEntry('data', 1));
 
     queryClient.updateSubscribers(key, 0, cacheTime);
@@ -110,7 +114,7 @@ describe('QueryClient', () => {
   it('clear() should remove all entries and cancel all timers', () => {
     const key1 = 'k1';
     const key2 = 'k2';
-
+    const queryClient = useQueryClient();
     queryClient.setEntry(key1, createMockEntry('d1', 0));
     queryClient.updateSubscribers(key1, 0, 1000);
 
@@ -126,6 +130,7 @@ describe('QueryClient', () => {
   });
 
   it('should handle updateSubscribers for non-existent keys gracefully', () => {
+    const queryClient = useQueryClient();
     expect(() => {
       queryClient.updateSubscribers('ghost-key', 1, 1000);
     }).not.toThrow();
