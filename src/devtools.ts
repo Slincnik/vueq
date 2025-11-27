@@ -1,6 +1,6 @@
 import { setupDevToolsPlugin } from '@vue/devtools-api';
 import type { Plugin } from 'vue';
-import { queryClient } from '@/composables/QueryCache';
+import { useQueryClient } from '@/composables/QueryClient';
 
 const INSPECTOR_ID = 'vueq-inspector';
 const INSPECTOR_LABEL = 'VueQ Inspector';
@@ -8,6 +8,7 @@ const INSPECTOR_LABEL = 'VueQ Inspector';
 export const VueQDevtools: Plugin = {
   install(app) {
     if (process.env.NODE_ENV === 'production') return;
+    const queryClient = useQueryClient();
 
     setupDevToolsPlugin(
       {
