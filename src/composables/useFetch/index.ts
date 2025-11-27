@@ -190,6 +190,7 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
         data.value = selected;
         onSuccess?.(selected);
         successEvent.trigger(selected);
+        queryClient.config.queries?.onSuccess?.(selected, fetchKey);
       } catch (err) {
         updateEntry(
           {
@@ -201,10 +202,16 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
         );
         onError?.(err);
         errorEvent.trigger(err as TError);
+        queryClient.config.queries?.onError?.(err, fetchKey);
       } finally {
         requestPromises.delete(fetchKey);
         onSettled?.(data.value, error.value);
         settledEvent.trigger(data.value, error.value);
+        queryClient.config.queries?.onSettled?.(
+          data.value,
+          error.value,
+          fetchKey
+        );
       }
     })();
 

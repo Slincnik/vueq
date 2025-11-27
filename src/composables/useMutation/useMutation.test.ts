@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { useMutation } from '.';
+import { setTestClient } from '@/helpers/test';
 
 describe('useMutation', () => {
   it('should be defined with initial status "idle"', () => {
@@ -114,6 +115,50 @@ describe('useMutation', () => {
 
     expect(localOnSuccess).not.toHaveBeenCalled();
     expect(localOnError).toHaveBeenCalled();
+    expect(settledCallback).toHaveBeenCalled();
+  });
+
+  it('should execute global callbacks (onSuccess, onSettled, onError)', async () => {
+    const mutationFn = async () => 'ok';
+
+    const globalOnSuccess = vi.fn();
+    const settledCallback = vi.fn();
+    const globalOnError = vi.fn();
+
+    setTestClient({
+      mutations: {
+        onError: globalOnError,
+        onSuccess: globalOnSuccess,
+        onSettled: settledCallback,
+      },
+    });
+
+    const { mutateAsync } = useMutation({ mutationFn });
+
+    await mutateAsync(undefined);
+
+    expect(globalOnSuccess).toHaveBeenCalled();
+    expect(settledCallback).toHaveBeenCalled();
+    expect(globalOnError).not.toHaveBeenCalled();
+
+    vi.clearAllMocks();
+
+    const errorFn = async () => {
+      throw new Error('Network fail');
+    };
+
+    const { mutateAsync: mutateError } = useMutation({
+      mutationFn: errorFn,
+    });
+
+    try {
+      await mutateError(undefined);
+    } catch {
+      // ignore error
+    }
+
+    expect(globalOnSuccess).not.toHaveBeenCalled();
+    expect(globalOnError).toHaveBeenCalled();
     expect(settledCallback).toHaveBeenCalled();
   });
 });

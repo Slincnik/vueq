@@ -3,6 +3,7 @@ import { effectScope, ref } from 'vue';
 
 import { useQueryClient } from '@/composables/QueryClient';
 import { useFetch } from '@/composables/useFetch';
+import { setTestClient } from '@/helpers/test';
 
 describe('useFetch', () => {
   beforeEach(() => {
@@ -291,6 +292,51 @@ describe('useFetch', () => {
       await vi.waitUntil(() => status.value === 'success');
 
       expect(spy).toHaveBeenCalledWith(mockData);
+    });
+    scope.stop();
+  });
+
+  it('must call an global queries callbacks (onSuccess, onSettled, onError)', async () => {
+    const onSuccess = vi.fn();
+    const onSettled = vi.fn();
+    const onError = vi.fn();
+
+    setTestClient({
+      queries: {
+        onSuccess,
+        onSettled,
+        onError,
+      },
+    });
+
+    const mockData = { id: 1 };
+    const fetcher = vi.fn().mockResolvedValue(mockData);
+
+    const scope = effectScope();
+    await scope.run(async () => {
+      const { status } = useFetch(['key'], fetcher);
+
+      await vi.waitUntil(() => status.value === 'success');
+
+      expect(onSuccess).toHaveBeenCalledWith(mockData, 'key');
+      expect(onSettled).toHaveBeenCalledWith(mockData, null, 'key');
+    });
+    scope.stop();
+
+    vi.clearAllMocks();
+
+    const error = new Error('test');
+    const fetcherError = vi.fn().mockRejectedValue(error);
+
+    const scope2 = effectScope();
+    await scope2.run(async () => {
+      const { status } = useFetch(['key'], fetcherError, {
+        retry: 0,
+      });
+
+      await vi.waitUntil(() => status.value === 'error');
+
+      expect(onError).toHaveBeenCalledWith(error, 'key');
     });
     scope.stop();
   });
