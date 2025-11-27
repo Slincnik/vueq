@@ -11,7 +11,7 @@ import {
 } from 'vue';
 import { catchError, serializeKey } from '@/utils';
 import type { FetchStatus, QueryStatus, UseQueryOptions } from '@/types';
-import { queryClient } from '../QueryCache';
+import { useQueryClient } from '../QueryClient';
 
 function createEventHook<T extends (...args: any[]) => any>() {
   const fns = new Set<T>();
@@ -54,6 +54,7 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
   fetcher: (signal?: AbortSignal) => Promise<TData>,
   options: UseQueryOptions<TData, TSelected> = {}
 ) {
+  const queryClient = useQueryClient();
   const key = computed(() => serializeKey(toValue(queryKey)));
   const {
     enabled = true,

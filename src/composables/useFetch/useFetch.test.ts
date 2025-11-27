@@ -1,14 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { effectScope, ref } from 'vue';
 
-import { queryClient } from '@/composables/QueryCache';
+import { useQueryClient } from '@/composables/QueryClient';
 import { useFetch } from '@/composables/useFetch';
 
 describe('useFetch', () => {
   beforeEach(() => {
     vi.useFakeTimers();
-
-    queryClient.clear();
   });
 
   afterEach(() => {
@@ -61,7 +59,7 @@ describe('useFetch', () => {
 
   it('it should take data from the cache and not make a request again if the data is fresh', async () => {
     const fetcher = vi.fn().mockResolvedValue('data');
-
+    const queryClient = useQueryClient();
     queryClient.setEntry(['test'], {
       data: 'cached data',
       error: null,
@@ -93,7 +91,7 @@ describe('useFetch', () => {
 
   it('must make a repeat request if the data is outdated (stale)', async () => {
     const fetcher = vi.fn().mockResolvedValue('new data');
-
+    const queryClient = useQueryClient();
     queryClient.setEntry(['old'], {
       data: 'old data',
       error: null,
@@ -234,6 +232,7 @@ describe('useFetch', () => {
   });
 
   it('should transform data using the select option', async () => {
+    const queryClient = useQueryClient();
     const rawData = { id: 1, largeData: '...' };
     const fetcher = vi.fn().mockResolvedValue(rawData);
 
