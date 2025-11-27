@@ -7,6 +7,14 @@
   "files": [
     "dist"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Slincnik/vueq.git"
+  },
+  "homepage": "https://github.com/Slincnik/vueq#readme",
+  "bugs": {
+    "url": "https://github.com/Slincnik/vueq/issues"
+  },
   "main": "./dist/index.es.js",
   "module": "./dist/index.es.js",
   "types": "./dist/index.d.ts",
