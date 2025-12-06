@@ -8,7 +8,7 @@ const INSPECTOR_LABEL = 'VueQ Inspector';
 export const VueQDevtools: Plugin = {
   install(app) {
     if (process.env.NODE_ENV === 'production') return;
-    const queryClient = useQueryClient();
+    const queryClient = app.runWithContext(() => useQueryClient());
 
     setupDevToolsPlugin(
       {
