@@ -404,4 +404,26 @@ describe('useFetch', () => {
     });
     scope2.stop();
   });
+
+  it('if refetchOnKeyChange is false, it should not refetch', async () => {
+    const fetcher = vi.fn().mockResolvedValue({ id: 1 });
+    const key = ref('key-1');
+    const scope = effectScope();
+
+    await scope.run(async () => {
+      const { status, data, isLoading } = useFetch(key, fetcher, {
+        refetchOnKeyChange: false,
+      });
+
+      await vi.waitUntil(() => status.value === 'success');
+
+      key.value = 'key-2';
+
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      expect(data.value).toStrictEqual({ id: 1 });
+      expect(status.value).toBe('pending');
+      expect(isLoading.value).toBe(false);
+    });
+    scope.stop();
+  });
 });

@@ -106,7 +106,10 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
     () => currentEntry.value?.error as TError
   );
 
-  const isLoading = computed(() => status.value === 'pending');
+  const isLoading = computed(() => {
+    if (data.value !== undefined) return false;
+    return status.value === 'pending';
+  });
   const isError = computed(() => status.value === 'error');
   const isSuccess = computed(() => status.value === 'success');
   const isFetching = computed(() => fetchStatus.value === 'fetching');
@@ -281,13 +284,16 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
     [key, isEnabled],
     ([newKey, newEnabled], [oldKey]) => {
       if (!newEnabled) return;
-      const entry = queryClient.getEntry(newKey);
-      const isKeyChanged = newKey !== oldKey;
+      const isKeyChanged = oldKey !== undefined && newKey !== oldKey;
 
+      if (isKeyChanged && !refetchOnKeyChange) {
+        return;
+      }
+
+      const entry = queryClient.getEntry(newKey);
       const shouldFetch =
         !entry ||
         (entry.updatedAt === 0 && entry.status === 'pending') ||
-        (isKeyChanged && refetchOnKeyChange) ||
         isStale.value;
 
       if (shouldFetch) {
