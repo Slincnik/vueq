@@ -9,7 +9,7 @@ import {
   toValue,
   watch,
 } from 'vue';
-import { catchError, serializeKey } from '@/utils';
+import { catchError, serializeKey, useTimestamp } from '@/utils';
 import type { FetchStatus, QueryStatus, UseQueryOptions } from '@/types';
 import { useQueryClient } from '../QueryClient';
 
@@ -72,6 +72,12 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
     enableAutoSyncCache = true,
   } = options;
 
+  const { now, pause } = useTimestamp();
+
+  if (staleTime === 0 || staleTime === Infinity) {
+    pause();
+  }
+
   const successEvent = createEventHook<(data: TSelected) => void>();
   const errorEvent = createEventHook<(err: TError) => void>();
   const settledEvent = createEventHook<(d?: TSelected, e?: TError) => void>();
@@ -108,8 +114,13 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
 
   const isStale = computed(() => {
     const entry = currentEntry.value;
+
     if (!entry || entry.data === undefined) return true;
-    return Date.now() - entry.updatedAt > staleTime;
+    if (staleTime === 0) return true;
+
+    if (staleTime === Infinity) return false;
+
+    return now.value - entry.updatedAt >= staleTime;
   });
 
   const updateEntry = (
@@ -136,12 +147,8 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
     }
 
     const entry = queryClient.getEntry(fetchKey);
-    const isEntryStale =
-      !entry ||
-      entry.data === undefined ||
-      Date.now() - entry.updatedAt >= staleTime;
 
-    if (!force && !isEntryStale) return;
+    if (!force && !isStale.value) return;
 
     abortController?.abort();
     abortController = new AbortController();
@@ -278,12 +285,10 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
       const isKeyChanged = newKey !== oldKey;
 
       const shouldFetch =
-        (isKeyChanged && refetchOnKeyChange) ||
         !entry ||
-        (entry.status === 'pending' &&
-          entry.fetchStatus === 'idle' &&
-          entry.updatedAt === 0) ||
-        (entry.data !== undefined && Date.now() - entry.updatedAt >= staleTime);
+        (entry.updatedAt === 0 && entry.status === 'pending') ||
+        (isKeyChanged && refetchOnKeyChange) ||
+        isStale.value;
 
       if (shouldFetch) {
         internalFetch();
