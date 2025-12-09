@@ -51,11 +51,20 @@ const requestPromises = new Map<string, Promise<void>>();
 
 export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
   queryKey: string | readonly any[] | MaybeRefOrGetter<string | readonly any[]>,
-  fetcher: (signal?: AbortSignal) => Promise<TData>,
+  fetcher: (
+    signal?: AbortSignal,
+    queryKey: string | readonly any[]
+  ) => Promise<TData>,
   options: UseQueryOptions<TData, TSelected> = {}
 ) {
   const queryClient = useQueryClient();
-  const key = computed(() => serializeKey(toValue(queryKey)));
+  const rawKey = computed(() => {
+    if (Array.isArray(queryKey)) {
+      return queryKey.map((item) => toValue(item));
+    }
+    return toValue(queryKey);
+  });
+  const key = computed(() => serializeKey(rawKey.value));
   const {
     enabled = true,
     initialData,
@@ -179,7 +188,7 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
     const promise = (async () => {
       try {
         const result = await runFetcher(
-          () => fetcher(abortController?.signal),
+          () => fetcher(abortController?.signal, rawKey.value),
           retry,
           retryDelay
         );
