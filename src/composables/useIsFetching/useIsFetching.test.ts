@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { useIsFetching } from '.';
 import { useQueryClient } from '../QueryClient';
 import { nextTick, ref } from 'vue';
+import { serializeKey } from '@/utils';
 
 describe('useIsFetching', () => {
   it('should return 0, if cache is empty', () => {
@@ -69,7 +70,7 @@ describe('useIsFetching', () => {
       users: { fetchStatus: 'fetching' },
     });
 
-    const isFetchingTodos = useIsFetching({ queryKey: ['todos'] });
+    const isFetchingTodos = useIsFetching({ queryKey: 'todos' });
 
     expect(isFetchingTodos.value).toBe(3);
   });
@@ -77,8 +78,8 @@ describe('useIsFetching', () => {
   it('should not count keys that are similar but not a subset', () => {
     const query = useQueryClient();
     Object.assign(query.entries, {
-      post: { fetchStatus: 'fetching' },
-      posts: { fetchStatus: 'fetching' },
+      [serializeKey(['post'])]: { fetchStatus: 'fetching' },
+      [serializeKey(['posts'])]: { fetchStatus: 'fetching' },
     });
 
     const isFetchingPost = useIsFetching({ queryKey: ['post'] });

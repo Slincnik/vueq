@@ -68,7 +68,7 @@ describe('useFetch', () => {
     const queryClient = useQueryClient();
 
     const now = Date.now();
-    queryClient.setEntry(['key-1'], {
+    queryClient.setEntry('key-1', {
       data: 'data-1',
       updatedAt: now,
       status: 'success',
@@ -77,7 +77,7 @@ describe('useFetch', () => {
       subscribers: 0,
       cacheTime: 5000,
     });
-    queryClient.setEntry(['key-2'], {
+    queryClient.setEntry('key-2', {
       data: 'data-2',
       updatedAt: now,
       status: 'success',
@@ -378,7 +378,7 @@ describe('useFetch', () => {
 
     const scope = effectScope();
     await scope.run(async () => {
-      const { status } = useFetch(['key-global'], fetcher);
+      const { status } = useFetch('key-global', fetcher);
 
       await vi.waitUntil(() => status.value === 'success');
 
@@ -394,7 +394,7 @@ describe('useFetch', () => {
 
     const scope2 = effectScope();
     await scope2.run(async () => {
-      const { status } = useFetch(['key-global-err'], fetcherError, {
+      const { status } = useFetch('key-global-err', fetcherError, {
         retry: 0,
       });
 
