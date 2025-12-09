@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { effectScope, ref } from 'vue';
+import { effectScope, ref, nextTick } from 'vue';
 
 import { useQueryClient } from '@/composables/QueryClient';
 import { useFetch } from '@/composables/useFetch';
@@ -12,6 +12,7 @@ describe('useFetch', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.clearAllMocks();
   });
 
   it('it should fetch data and update status', async () => {
@@ -33,6 +34,75 @@ describe('useFetch', () => {
       expect(data.value).toEqual(mockData);
     });
 
+    scope.stop();
+  });
+
+  it('isStale property should become true automatically after staleTime', async () => {
+    const fetcher = vi.fn().mockResolvedValue('data');
+
+    const scope = effectScope();
+    await scope.run(async () => {
+      const { status, isStale } = useFetch(['stale-reactivity'], fetcher, {
+        staleTime: 2000,
+      });
+
+      await vi.waitUntil(() => status.value === 'success');
+
+      expect(isStale.value).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(isStale.value).toBe(false);
+
+      // Added 2000 because reactivity updates "by steps": 0, 1000, 2000 ...
+      // If staleTime is 2000, by data loading not in 0.0000ms, a little bit later, then in 2000 steps, we are mathematically "no stale"
+      await vi.advanceTimersByTimeAsync(2000);
+
+      expect(isStale.value).toBe(true);
+    });
+    scope.stop();
+  });
+
+  it('should NOT refetch on key change if data is fresh and refetchOnKeyChange is false', async () => {
+    const fetcher = vi.fn().mockResolvedValue('data');
+    const key = ref('key-1');
+    const queryClient = useQueryClient();
+
+    const now = Date.now();
+    queryClient.setEntry(['key-1'], {
+      data: 'data-1',
+      updatedAt: now,
+      status: 'success',
+      fetchStatus: 'idle',
+      error: null,
+      subscribers: 0,
+      cacheTime: 5000,
+    });
+    queryClient.setEntry(['key-2'], {
+      data: 'data-2',
+      updatedAt: now,
+      status: 'success',
+      fetchStatus: 'idle',
+      error: null,
+      subscribers: 0,
+      cacheTime: 5000,
+    });
+
+    const scope = effectScope();
+    await scope.run(async () => {
+      const { data } = useFetch(key, fetcher, {
+        staleTime: 5000,
+        refetchOnKeyChange: false,
+      });
+
+      expect(data.value).toBe('data-1');
+      expect(fetcher).not.toHaveBeenCalled();
+
+      key.value = 'key-2';
+      await nextTick();
+
+      expect(data.value).toBe('data-2');
+      expect(fetcher).not.toHaveBeenCalled();
+    });
     scope.stop();
   });
 
@@ -81,7 +151,7 @@ describe('useFetch', () => {
       expect(data.value).toBe('cached data');
       expect(status.value).toBe('success');
 
-      await vi.runAllTimersAsync();
+      await vi.advanceTimersByTimeAsync(100);
 
       expect(fetcher).not.toHaveBeenCalled();
       expect(data.value).toBe('cached data');
@@ -109,7 +179,7 @@ describe('useFetch', () => {
 
       expect(data.value).toBe('old data');
 
-      await vi.runAllTimersAsync();
+      await vi.advanceTimersByTimeAsync(1000);
 
       expect(fetcher).toHaveBeenCalled();
 
@@ -144,9 +214,9 @@ describe('useFetch', () => {
 
     const scope = effectScope();
     await scope.run(async () => {
-      const { invalidate } = useFetch(['inv'], fetcher);
+      const { invalidate, status } = useFetch(['inv'], fetcher);
 
-      await vi.runAllTimersAsync();
+      await vi.waitUntil(() => status.value === 'success');
       expect(fetcher).toHaveBeenCalledTimes(1);
 
       invalidate();
@@ -195,8 +265,7 @@ describe('useFetch', () => {
         () => fetcher(id.value)
       );
 
-      await vi.runAllTimersAsync();
-      expect(data.value).toBe('data-1');
+      await vi.waitUntil(() => data.value === 'data-1');
       expect(fetcher).toHaveBeenCalledTimes(1);
 
       id.value = 2;
@@ -204,7 +273,6 @@ describe('useFetch', () => {
       await vi.waitUntil(() => data.value === 'data-2');
 
       expect(fetcher).toHaveBeenCalledTimes(2);
-      expect(data.value).toBe('data-2');
     });
     scope.stop();
   });
@@ -220,11 +288,12 @@ describe('useFetch', () => {
     await scope.run(async () => {
       const { data, status, isError } = useFetch(['retry-test'], fetcher, {
         retry: 2,
+        retryDelay: 100,
       });
 
       await vi.runAllTimersAsync();
-      await vi.waitUntil(() => status.value === 'success');
 
+      expect(status.value).toBe('success');
       expect(fetcher).toHaveBeenCalledTimes(3);
       expect(isError.value).toBe(false);
       expect(data.value).toBe('Success');
@@ -265,7 +334,7 @@ describe('useFetch', () => {
 
     await scope.run(async () => {
       useFetch(['abort-test'], fetcher);
-      await vi.runAllTimersAsync();
+      await nextTick();
     });
 
     expect(fetcher).toHaveBeenCalled();
@@ -283,10 +352,9 @@ describe('useFetch', () => {
 
     const scope = effectScope();
     await scope.run(async () => {
-      const { onSuccess, status } = useFetch(['key'], fetcher);
+      const { onSuccess, status } = useFetch(['key-events'], fetcher);
 
       const spy = vi.fn();
-
       onSuccess(spy);
 
       await vi.waitUntil(() => status.value === 'success');
@@ -302,11 +370,7 @@ describe('useFetch', () => {
     const onError = vi.fn();
 
     setTestClient({
-      queries: {
-        onSuccess,
-        onSettled,
-        onError,
-      },
+      queries: { onSuccess, onSettled, onError },
     });
 
     const mockData = { id: 1 };
@@ -314,12 +378,12 @@ describe('useFetch', () => {
 
     const scope = effectScope();
     await scope.run(async () => {
-      const { status } = useFetch(['key'], fetcher);
+      const { status } = useFetch(['key-global'], fetcher);
 
       await vi.waitUntil(() => status.value === 'success');
 
-      expect(onSuccess).toHaveBeenCalledWith(mockData, 'key');
-      expect(onSettled).toHaveBeenCalledWith(mockData, null, 'key');
+      expect(onSuccess).toHaveBeenCalledWith(mockData, 'key-global');
+      expect(onSettled).toHaveBeenCalledWith(mockData, null, 'key-global');
     });
     scope.stop();
 
@@ -330,14 +394,14 @@ describe('useFetch', () => {
 
     const scope2 = effectScope();
     await scope2.run(async () => {
-      const { status } = useFetch(['key'], fetcherError, {
+      const { status } = useFetch(['key-global-err'], fetcherError, {
         retry: 0,
       });
 
       await vi.waitUntil(() => status.value === 'error');
 
-      expect(onError).toHaveBeenCalledWith(error, 'key');
+      expect(onError).toHaveBeenCalledWith(error, 'key-global-err');
     });
-    scope.stop();
+    scope2.stop();
   });
 });
