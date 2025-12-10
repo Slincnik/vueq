@@ -70,6 +70,8 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
     return toValue(queryKey);
   });
   const key = computed(() => serializeKey(rawKey.value));
+  let lastSubscribedKey: string | null = null;
+
   const {
     enabled = true,
     initialData,
@@ -285,6 +287,7 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
           );
       }
       if (newKey) {
+        lastSubscribedKey = newKey;
         const entry = queryClient.getEntry(newKey);
         if (!entry) {
           queryClient.setEntry(newKey, {
@@ -362,7 +365,8 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
   );
 
   onScopeDispose(() => {
-    const k = key.value;
+    const k = lastSubscribedKey;
+    if (!k) return;
     const entry = queryClient.getEntry(k);
     if (entry) {
       queryClient.updateSubscribers(
