@@ -426,4 +426,45 @@ describe('useFetch', () => {
     });
     scope.stop();
   });
+
+  it('should returned static queryKey in fetcher', async () => {
+    const fetcherSpy = vi.fn().mockResolvedValue('ok');
+
+    const key = ['users', 'list'];
+
+    const scope = effectScope();
+    scope.run(async () => {
+      useFetch(key, fetcherSpy);
+
+      await nextTick();
+
+      expect(fetcherSpy).toHaveBeenCalledTimes(1);
+
+      const callArgs = fetcherSpy.mock.calls[0][1];
+
+      expect(callArgs).toEqual(key);
+    });
+  });
+
+  it.only('should returned dynamic queryKey in fetcher', async () => {
+    const fetcherSpy = vi.fn().mockResolvedValue('ok');
+    const id = ref(100);
+
+    const scope = effectScope();
+    scope.run(async () => {
+      useFetch(['users', id], fetcherSpy);
+
+      await nextTick();
+
+      const callArgs = fetcherSpy.mock.calls[0][1];
+
+      expect(callArgs).toEqual(['users', 100]);
+
+      id.value = 200;
+
+      await vi.waitUntil(() => fetcherSpy.mock.calls.length === 2);
+
+      expect(fetcherSpy).toBeCalledWith(['users', 200]);
+    });
+  });
 });
