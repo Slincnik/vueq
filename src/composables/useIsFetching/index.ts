@@ -26,6 +26,11 @@ export function useIsFetching(filters: UseIsFetchingFilters = {}) {
 
     const targetKey = serializeKey(queryKey);
 
+    const arrayPrefix =
+      targetKey.endsWith(']') && targetKey.startsWith('[')
+        ? targetKey.slice(0, -1) + ','
+        : targetKey + ',';
+
     return allEntries.reduce((count, [key, entry]) => {
       if (entry.fetchStatus !== 'fetching') return count;
 
@@ -33,7 +38,7 @@ export function useIsFetching(filters: UseIsFetchingFilters = {}) {
         return count + 1;
       }
 
-      if (key.startsWith(targetKey + ',')) {
+      if (key.startsWith(arrayPrefix)) {
         return count + 1;
       }
 

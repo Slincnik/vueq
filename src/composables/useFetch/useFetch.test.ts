@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { effectScope, ref } from 'vue';
+import { effectScope, ref, nextTick } from 'vue';
 
 import { useQueryClient } from '@/composables/QueryClient';
 import { useFetch } from '@/composables/useFetch';
@@ -12,6 +12,7 @@ describe('useFetch', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.clearAllMocks();
   });
 
   it('it should fetch data and update status', async () => {
@@ -33,6 +34,75 @@ describe('useFetch', () => {
       expect(data.value).toEqual(mockData);
     });
 
+    scope.stop();
+  });
+
+  it('isStale property should become true automatically after staleTime', async () => {
+    const fetcher = vi.fn().mockResolvedValue('data');
+
+    const scope = effectScope();
+    await scope.run(async () => {
+      const { status, isStale } = useFetch(['stale-reactivity'], fetcher, {
+        staleTime: 2000,
+      });
+
+      await vi.waitUntil(() => status.value === 'success');
+
+      expect(isStale.value).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(isStale.value).toBe(false);
+
+      // Added 2000 because reactivity updates "by steps": 0, 1000, 2000 ...
+      // If staleTime is 2000, by data loading not in 0.0000ms, a little bit later, then in 2000 steps, we are mathematically "no stale"
+      await vi.advanceTimersByTimeAsync(2000);
+
+      expect(isStale.value).toBe(true);
+    });
+    scope.stop();
+  });
+
+  it('should NOT refetch on key change if data is fresh and refetchOnKeyChange is false', async () => {
+    const fetcher = vi.fn().mockResolvedValue('data');
+    const key = ref('key-1');
+    const queryClient = useQueryClient();
+
+    const now = Date.now();
+    queryClient.setEntry('key-1', {
+      data: 'data-1',
+      updatedAt: now,
+      status: 'success',
+      fetchStatus: 'idle',
+      error: null,
+      subscribers: 0,
+      cacheTime: 5000,
+    });
+    queryClient.setEntry('key-2', {
+      data: 'data-2',
+      updatedAt: now,
+      status: 'success',
+      fetchStatus: 'idle',
+      error: null,
+      subscribers: 0,
+      cacheTime: 5000,
+    });
+
+    const scope = effectScope();
+    await scope.run(async () => {
+      const { data } = useFetch(key, fetcher, {
+        staleTime: 5000,
+        refetchOnKeyChange: false,
+      });
+
+      expect(data.value).toBe('data-1');
+      expect(fetcher).not.toHaveBeenCalled();
+
+      key.value = 'key-2';
+      await nextTick();
+
+      expect(data.value).toBe('data-2');
+      expect(fetcher).not.toHaveBeenCalled();
+    });
     scope.stop();
   });
 
@@ -81,7 +151,7 @@ describe('useFetch', () => {
       expect(data.value).toBe('cached data');
       expect(status.value).toBe('success');
 
-      await vi.runAllTimersAsync();
+      await vi.advanceTimersByTimeAsync(100);
 
       expect(fetcher).not.toHaveBeenCalled();
       expect(data.value).toBe('cached data');
@@ -109,7 +179,7 @@ describe('useFetch', () => {
 
       expect(data.value).toBe('old data');
 
-      await vi.runAllTimersAsync();
+      await vi.advanceTimersByTimeAsync(1000);
 
       expect(fetcher).toHaveBeenCalled();
 
@@ -144,9 +214,9 @@ describe('useFetch', () => {
 
     const scope = effectScope();
     await scope.run(async () => {
-      const { invalidate } = useFetch(['inv'], fetcher);
+      const { invalidate, status } = useFetch(['inv'], fetcher);
 
-      await vi.runAllTimersAsync();
+      await vi.waitUntil(() => status.value === 'success');
       expect(fetcher).toHaveBeenCalledTimes(1);
 
       invalidate();
@@ -195,8 +265,7 @@ describe('useFetch', () => {
         () => fetcher(id.value)
       );
 
-      await vi.runAllTimersAsync();
-      expect(data.value).toBe('data-1');
+      await vi.waitUntil(() => data.value === 'data-1');
       expect(fetcher).toHaveBeenCalledTimes(1);
 
       id.value = 2;
@@ -204,7 +273,6 @@ describe('useFetch', () => {
       await vi.waitUntil(() => data.value === 'data-2');
 
       expect(fetcher).toHaveBeenCalledTimes(2);
-      expect(data.value).toBe('data-2');
     });
     scope.stop();
   });
@@ -220,11 +288,12 @@ describe('useFetch', () => {
     await scope.run(async () => {
       const { data, status, isError } = useFetch(['retry-test'], fetcher, {
         retry: 2,
+        retryDelay: 100,
       });
 
       await vi.runAllTimersAsync();
-      await vi.waitUntil(() => status.value === 'success');
 
+      expect(status.value).toBe('success');
       expect(fetcher).toHaveBeenCalledTimes(3);
       expect(isError.value).toBe(false);
       expect(data.value).toBe('Success');
@@ -265,7 +334,7 @@ describe('useFetch', () => {
 
     await scope.run(async () => {
       useFetch(['abort-test'], fetcher);
-      await vi.runAllTimersAsync();
+      await nextTick();
     });
 
     expect(fetcher).toHaveBeenCalled();
@@ -283,10 +352,9 @@ describe('useFetch', () => {
 
     const scope = effectScope();
     await scope.run(async () => {
-      const { onSuccess, status } = useFetch(['key'], fetcher);
+      const { onSuccess, status } = useFetch(['key-events'], fetcher);
 
       const spy = vi.fn();
-
       onSuccess(spy);
 
       await vi.waitUntil(() => status.value === 'success');
@@ -302,11 +370,7 @@ describe('useFetch', () => {
     const onError = vi.fn();
 
     setTestClient({
-      queries: {
-        onSuccess,
-        onSettled,
-        onError,
-      },
+      queries: { onSuccess, onSettled, onError },
     });
 
     const mockData = { id: 1 };
@@ -314,12 +378,12 @@ describe('useFetch', () => {
 
     const scope = effectScope();
     await scope.run(async () => {
-      const { status } = useFetch(['key'], fetcher);
+      const { status } = useFetch('key-global', fetcher);
 
       await vi.waitUntil(() => status.value === 'success');
 
-      expect(onSuccess).toHaveBeenCalledWith(mockData, 'key');
-      expect(onSettled).toHaveBeenCalledWith(mockData, null, 'key');
+      expect(onSuccess).toHaveBeenCalledWith(mockData, 'key-global');
+      expect(onSettled).toHaveBeenCalledWith(mockData, null, 'key-global');
     });
     scope.stop();
 
@@ -330,14 +394,146 @@ describe('useFetch', () => {
 
     const scope2 = effectScope();
     await scope2.run(async () => {
-      const { status } = useFetch(['key'], fetcherError, {
+      const { status } = useFetch('key-global-err', fetcherError, {
         retry: 0,
       });
 
       await vi.waitUntil(() => status.value === 'error');
 
-      expect(onError).toHaveBeenCalledWith(error, 'key');
+      expect(onError).toHaveBeenCalledWith(error, 'key-global-err');
+    });
+    scope2.stop();
+  });
+
+  it('if refetchOnKeyChange is false, it should not refetch', async () => {
+    const fetcher = vi.fn().mockResolvedValue({ id: 1 });
+    const key = ref('key-1');
+    const scope = effectScope();
+
+    await scope.run(async () => {
+      const { status, data, isLoading } = useFetch(key, fetcher, {
+        refetchOnKeyChange: false,
+      });
+
+      await vi.waitUntil(() => status.value === 'success');
+
+      key.value = 'key-2';
+
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      expect(data.value).toStrictEqual({ id: 1 });
+      expect(status.value).toBe('pending');
+      expect(isLoading.value).toBe(false);
     });
     scope.stop();
+  });
+
+  it('should returned static queryKey in fetcher', async () => {
+    const fetcherSpy = vi.fn().mockResolvedValue('ok');
+
+    const key = ['users', 'list'];
+
+    const scope = effectScope();
+    scope.run(async () => {
+      useFetch(key, fetcherSpy);
+
+      await nextTick();
+
+      expect(fetcherSpy).toHaveBeenCalledTimes(1);
+
+      const callArgs = fetcherSpy.mock.calls[0][1];
+
+      expect(callArgs).toEqual(key);
+    });
+  });
+
+  it('should returned dynamic queryKey in fetcher', async () => {
+    const fetcherSpy = vi.fn().mockResolvedValue('ok');
+    const id = ref(100);
+
+    const scope = effectScope();
+    scope.run(async () => {
+      useFetch(['users', id], fetcherSpy);
+
+      await nextTick();
+
+      const callArgs = fetcherSpy.mock.calls[0][1];
+
+      expect(callArgs).toEqual(['users', 100]);
+
+      id.value = 200;
+
+      await vi.waitUntil(() => fetcherSpy.mock.calls.length === 2);
+
+      expect(fetcherSpy).toBeCalledWith(['users', 200]);
+    });
+  });
+
+  it('should update local data immediately when `setData` is called with a value', () => {
+    const fetcherSpy = vi.fn().mockResolvedValue('ok');
+    const scope = effectScope();
+    scope.run(() => {
+      const queryClient = useQueryClient();
+      const { data, setData } = useFetch('test-key', fetcherSpy);
+
+      expect(data.value).toBeUndefined();
+
+      setData('new-data');
+
+      expect(data.value).toBe('new-data');
+      expect(queryClient.getEntry('test-key')?.data).toBe('new-data');
+    });
+  });
+
+  it('should update local data useing a fucntional updater', () => {
+    const fetcherSpy = vi.fn().mockResolvedValue('ok');
+    const scope = effectScope();
+
+    scope.run(() => {
+      const queryClient = useQueryClient();
+      const initialObj = { name: 'John', age: 25 };
+
+      const { data, setData } = useFetch('test-key', fetcherSpy, {
+        initialData: initialObj,
+      });
+
+      expect(data.value).toBeDefined();
+
+      setData((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          age: 26,
+        };
+      });
+
+      expect(data.value).toEqual({ name: 'John', age: 26 });
+      expect(data.value?.age).toBe(26);
+      expect(queryClient.getEntry('test-key')?.data).toEqual({
+        name: 'John',
+        age: 26,
+      });
+    });
+  });
+
+  it('should sync updates between two instances useing the same key', () => {
+    const fetcherSpy = vi.fn().mockResolvedValue('ok');
+    const scope = effectScope();
+
+    scope.run(async () => {
+      const { data: data1, setData: setData1 } = useFetch(
+        'test-key',
+        fetcherSpy
+      );
+
+      const { data: data2 } = useFetch('test-key', fetcherSpy);
+
+      expect(data1.value).toBeUndefined();
+      expect(data2.value).toBeUndefined();
+
+      setData1('shared-value');
+      expect(data1.value).toBe('shared-value');
+      await nextTick();
+      expect(data2.value).toBe('shared-value');
+    });
   });
 });

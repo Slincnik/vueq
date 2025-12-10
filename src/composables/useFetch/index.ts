@@ -4,13 +4,17 @@ import {
   type MaybeRefOrGetter,
   onScopeDispose,
   readonly,
-  type Ref,
-  ref,
+  shallowRef,
   toValue,
   watch,
 } from 'vue';
-import { catchError, serializeKey } from '@/utils';
-import type { FetchStatus, QueryStatus, UseQueryOptions } from '@/types';
+import { catchError, serializeKey, useTimestamp } from '@/utils';
+import type {
+  FetchStatus,
+  QueryStatus,
+  UseFetchReturn,
+  UseQueryOptions,
+} from '@/types';
 import { useQueryClient } from '../QueryClient';
 
 function createEventHook<T extends (...args: any[]) => any>() {
@@ -49,13 +53,23 @@ async function runFetcher<T>(
 
 const requestPromises = new Map<string, Promise<void>>();
 
+// @ts-nocheck
 export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
   queryKey: string | readonly any[] | MaybeRefOrGetter<string | readonly any[]>,
-  fetcher: (signal?: AbortSignal) => Promise<TData>,
+  fetcher: (
+    signal?: AbortSignal,
+    queryKey: string | readonly any[]
+  ) => Promise<TData>,
   options: UseQueryOptions<TData, TSelected> = {}
-) {
+): UseFetchReturn<TData, TError, TSelected> {
   const queryClient = useQueryClient();
-  const key = computed(() => serializeKey(toValue(queryKey)));
+  const rawKey = computed(() => {
+    if (Array.isArray(queryKey)) {
+      return queryKey.map((item) => toValue(item));
+    }
+    return toValue(queryKey);
+  });
+  const key = computed(() => serializeKey(rawKey.value));
   const {
     enabled = true,
     initialData,
@@ -69,8 +83,15 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
     onSuccess,
     onSynced,
     refetchOnKeyChange = true,
+    keepPreviousData = false,
     enableAutoSyncCache = true,
   } = options;
+
+  const { now, pause } = useTimestamp();
+
+  if (staleTime === 0 || staleTime === Infinity) {
+    pause();
+  }
 
   const successEvent = createEventHook<(data: TSelected) => void>();
   const errorEvent = createEventHook<(err: TError) => void>();
@@ -87,7 +108,7 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
     return undefined;
   };
 
-  const data = ref<TSelected | undefined>(getInitialState());
+  const data = shallowRef<TSelected | undefined>(getInitialState());
   const currentEntry = computed(() => queryClient.getEntry(key.value));
 
   const status = computed<QueryStatus>(
@@ -100,7 +121,10 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
     () => currentEntry.value?.error as TError
   );
 
-  const isLoading = computed(() => status.value === 'pending');
+  const isLoading = computed(() => {
+    if (data.value !== undefined) return false;
+    return status.value === 'pending';
+  });
   const isError = computed(() => status.value === 'error');
   const isSuccess = computed(() => status.value === 'success');
   const isFetching = computed(() => fetchStatus.value === 'fetching');
@@ -108,8 +132,13 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
 
   const isStale = computed(() => {
     const entry = currentEntry.value;
+
     if (!entry || entry.data === undefined) return true;
-    return Date.now() - entry.updatedAt > staleTime;
+    if (staleTime === 0) return true;
+
+    if (staleTime === Infinity) return false;
+
+    return now.value - entry.updatedAt >= staleTime;
   });
 
   const updateEntry = (
@@ -136,12 +165,8 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
     }
 
     const entry = queryClient.getEntry(fetchKey);
-    const isEntryStale =
-      !entry ||
-      entry.data === undefined ||
-      Date.now() - entry.updatedAt >= staleTime;
 
-    if (!force && !isEntryStale) return;
+    if (!force && !isStale.value) return;
 
     abortController?.abort();
     abortController = new AbortController();
@@ -169,7 +194,7 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
     const promise = (async () => {
       try {
         const result = await runFetcher(
-          () => fetcher(abortController?.signal),
+          () => fetcher(abortController?.signal, rawKey.value),
           retry,
           retryDelay
         );
@@ -225,13 +250,26 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
     internalFetch();
   };
 
-  const setData = (updater: TData | ((prev?: TData) => TData | undefined)) => {
+  const setData = (
+    updater: TData | ((prev?: Readonly<TData>) => TData | undefined)
+  ) => {
+    const entry = queryClient.getEntry(rawKey.value);
+    const prevData = entry?.data as TData | undefined;
     const func =
       typeof updater === 'function'
         ? (updater as (prev?: TData) => TData)
         : () => updater;
 
-    queryClient.updateEntry<TData>(key.value, func);
+    const newData = func(prevData);
+
+    if (newData !== undefined) {
+      const selectedNewData = getSelectedData(newData);
+      data.value = selectedNewData;
+      onSynced?.(data.value);
+    } else {
+      data.value = undefined;
+    }
+    queryClient.updateEntry<TData>(rawKey.value, func);
   };
 
   watch(
@@ -274,21 +312,27 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
     [key, isEnabled],
     ([newKey, newEnabled], [oldKey]) => {
       if (!newEnabled) return;
-      const entry = queryClient.getEntry(newKey);
-      const isKeyChanged = newKey !== oldKey;
+      const isKeyChanged = oldKey !== undefined && newKey !== oldKey;
 
+      if (isKeyChanged && !refetchOnKeyChange) {
+        return;
+      }
+
+      const entry = queryClient.getEntry(newKey);
       const shouldFetch =
-        (isKeyChanged && refetchOnKeyChange) ||
         !entry ||
-        (entry.status === 'pending' &&
-          entry.fetchStatus === 'idle' &&
-          entry.updatedAt === 0) ||
-        (entry.data !== undefined && Date.now() - entry.updatedAt >= staleTime);
+        (entry.updatedAt === 0 && entry.status === 'pending') ||
+        isStale.value;
 
       if (shouldFetch) {
+        if (!keepPreviousData && isKeyChanged) {
+          data.value = undefined;
+        }
         internalFetch();
-      } else if (entry?.data !== undefined) {
-        data.value = getSelectedData(entry.data as TData);
+      } else {
+        if (entry?.data !== undefined) {
+          data.value = getSelectedData(entry.data as TData);
+        }
       }
     },
     { immediate: true }
@@ -301,12 +345,18 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
     ],
     ([newData, newUpdated], [oldData, oldUpdated]) => {
       if (!enableAutoSyncCache) return;
-      if (
-        newData !== undefined &&
-        (newData !== oldData || newUpdated !== oldUpdated)
-      ) {
-        data.value = getSelectedData(newData as TData);
-        onSynced?.(data.value!);
+
+      const hasChanged = newData !== oldData || newUpdated !== oldUpdated;
+
+      if (hasChanged) {
+        if (newData !== undefined) {
+          data.value = getSelectedData(newData as TData);
+          onSynced?.(data.value);
+        } else {
+          if (!keepPreviousData) {
+            data.value = undefined;
+          }
+        }
       }
     }
   );
@@ -325,7 +375,7 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
   });
 
   return {
-    data: data as Ref<TSelected | undefined>,
+    data,
     error,
     status: readonly(status),
     fetchStatus: readonly(fetchStatus),

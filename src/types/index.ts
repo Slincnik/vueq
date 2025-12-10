@@ -46,6 +46,7 @@ export interface UseQueryOptions<TData, TSelected = TData> {
   onSettled?: (data: TSelected | undefined, error: unknown) => void;
   onSynced?: (data: TSelected) => void;
   refetchOnKeyChange?: boolean;
+  keepPreviousData?: boolean;
   enableAutoSyncCache?: boolean;
 }
 
@@ -98,4 +99,24 @@ export interface UseMutationReturn<TData, TError, TVariables> {
   ) => Promise<TData>;
 
   reset: () => void;
+}
+
+export interface UseFetchReturn<TData, TError, TSelected> {
+  data: Ref<TSelected | undefined>;
+  error: Ref<TError | undefined>;
+  status: Ref<QueryStatus>;
+  fetchStatus: Ref<FetchStatus>;
+  isLoading: Ref<boolean>;
+  isFetching: Ref<boolean>;
+  isError: Ref<boolean>;
+  isSuccess: Ref<boolean>;
+  isStale: Ref<boolean>;
+  refetch: (force?: boolean) => Promise<void> | undefined;
+  invalidate: () => void;
+  setData: (
+    updater: TData | ((prev?: Readonly<TData>) => TData | undefined)
+  ) => void;
+  onSuccess: (fn: (data: TSelected) => void) => () => void;
+  onError: (fn: (err: TError) => void) => () => void;
+  onSettled: (fn: (data?: TSelected, error?: TError) => void) => () => void;
 }
