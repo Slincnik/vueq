@@ -46,6 +46,7 @@ export interface UseQueryOptions<TData, TSelected = TData> {
   onSettled?: (data: TSelected | undefined, error: unknown) => void;
   onSynced?: (data: TSelected) => void;
   refetchOnKeyChange?: boolean;
+  keepPreviousData?: boolean;
   enableAutoSyncCache?: boolean;
 }
 
