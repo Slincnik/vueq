@@ -70,6 +70,8 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
     return toValue(queryKey);
   });
   const key = computed(() => serializeKey(rawKey.value));
+  let lastSubscribedKey: string | null = null;
+
   const {
     enabled = true,
     initialData,
@@ -109,7 +111,7 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
   };
 
   const data = shallowRef<TSelected | undefined>(getInitialState());
-  const currentEntry = computed(() => queryClient.getEntry(key.value));
+  const currentEntry = computed(() => queryClient.getEntry(rawKey.value));
 
   const status = computed<QueryStatus>(
     () => currentEntry.value?.status ?? 'pending'
@@ -147,7 +149,7 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
   ) => {
     const entry = queryClient.entries[newKey ?? key.value];
     if (entry) {
-      queryClient.setEntry(key.value, { ...entry, ...partial });
+      queryClient.setEntry(rawKey.value, { ...entry, ...partial });
     }
   };
 
@@ -285,6 +287,7 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
           );
       }
       if (newKey) {
+        lastSubscribedKey = newKey;
         const entry = queryClient.getEntry(newKey);
         if (!entry) {
           queryClient.setEntry(newKey, {
@@ -362,7 +365,8 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
   );
 
   onScopeDispose(() => {
-    const k = key.value;
+    const k = lastSubscribedKey;
+    if (!k) return;
     const entry = queryClient.getEntry(k);
     if (entry) {
       queryClient.updateSubscribers(
