@@ -1,4 +1,4 @@
-import type { Ref, MaybeRefOrGetter, DeepReadonly } from 'vue';
+import type { Ref, MaybeRefOrGetter } from 'vue';
 
 export type QueryStatus = 'pending' | 'success' | 'error';
 export type FetchStatus = 'fetching' | 'paused' | 'idle';
@@ -114,7 +114,7 @@ export interface UseFetchReturn<TData, TError, TSelected> {
   refetch: (force?: boolean) => Promise<void> | undefined;
   invalidate: () => void;
   setData: (
-    updater: TData | ((prev?: DeepReadonly<TData>) => TData | undefined)
+    updater: TData | ((prev?: Readonly<TData>) => TData | undefined)
   ) => void;
   onSuccess: (fn: (data: TSelected) => void) => () => void;
   onError: (fn: (err: TError) => void) => () => void;

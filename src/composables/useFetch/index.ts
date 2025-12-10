@@ -1,6 +1,5 @@
 import {
   computed,
-  type DeepReadonly,
   getCurrentScope,
   type MaybeRefOrGetter,
   onScopeDispose,
@@ -252,7 +251,7 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
   };
 
   const setData = (
-    updater: TData | ((prev?: DeepReadonly<TData>) => TData | undefined)
+    updater: TData | ((prev?: Readonly<TData>) => TData | undefined)
   ) => {
     const entry = queryClient.getEntry(rawKey.value);
     const prevData = entry?.data as TData | undefined;
