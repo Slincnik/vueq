@@ -1,16 +1,21 @@
 import {
   computed,
+  type DeepReadonly,
   getCurrentScope,
   type MaybeRefOrGetter,
   onScopeDispose,
   readonly,
-  type Ref,
-  ref,
+  shallowRef,
   toValue,
   watch,
 } from 'vue';
 import { catchError, serializeKey, useTimestamp } from '@/utils';
-import type { FetchStatus, QueryStatus, UseQueryOptions } from '@/types';
+import type {
+  FetchStatus,
+  QueryStatus,
+  UseFetchReturn,
+  UseQueryOptions,
+} from '@/types';
 import { useQueryClient } from '../QueryClient';
 
 function createEventHook<T extends (...args: any[]) => any>() {
@@ -49,6 +54,7 @@ async function runFetcher<T>(
 
 const requestPromises = new Map<string, Promise<void>>();
 
+// @ts-nocheck
 export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
   queryKey: string | readonly any[] | MaybeRefOrGetter<string | readonly any[]>,
   fetcher: (
@@ -56,7 +62,7 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
     queryKey: string | readonly any[]
   ) => Promise<TData>,
   options: UseQueryOptions<TData, TSelected> = {}
-) {
+): UseFetchReturn<TData, TError, TSelected> {
   const queryClient = useQueryClient();
   const rawKey = computed(() => {
     if (Array.isArray(queryKey)) {
@@ -102,7 +108,7 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
     return undefined;
   };
 
-  const data = ref<TSelected | undefined>(getInitialState());
+  const data = shallowRef<TSelected | undefined>(getInitialState());
   const currentEntry = computed(() => queryClient.getEntry(key.value));
 
   const status = computed<QueryStatus>(
@@ -244,13 +250,27 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
     internalFetch();
   };
 
-  const setData = (updater: TData | ((prev?: TData) => TData | undefined)) => {
+  const setData = (
+    updater: TData | ((prev?: DeepReadonly<TData>) => TData | undefined)
+  ) => {
+    const entry = queryClient.getEntry(rawKey.value);
+    const prevData = entry?.data as TData | undefined;
     const func =
       typeof updater === 'function'
         ? (updater as (prev?: TData) => TData)
         : () => updater;
 
-    queryClient.updateEntry<TData>(key.value, func);
+    const newData = func(prevData);
+
+    const selectedNewData = getSelectedData(newData);
+
+    data.value = selectedNewData;
+
+    if (data.value !== undefined) {
+      onSynced?.(data.value);
+    }
+
+    queryClient.updateEntry<TData>(rawKey.value, func);
   };
 
   watch(
@@ -321,12 +341,14 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
     ],
     ([newData, newUpdated], [oldData, oldUpdated]) => {
       if (!enableAutoSyncCache) return;
-      if (
-        newData !== undefined &&
-        (newData !== oldData || newUpdated !== oldUpdated)
-      ) {
+
+      const hasChanged = newData !== oldData || newUpdated !== oldUpdated;
+
+      if (hasChanged) {
         data.value = getSelectedData(newData as TData);
-        onSynced?.(data.value!);
+        if (data.value !== undefined) {
+          onSynced?.(data.value);
+        }
       }
     }
   );
@@ -345,7 +367,7 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
   });
 
   return {
-    data: data as Ref<TSelected | undefined>,
+    data,
     error,
     status: readonly(status),
     fetchStatus: readonly(fetchStatus),
