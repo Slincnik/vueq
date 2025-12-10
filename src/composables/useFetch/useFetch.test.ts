@@ -446,7 +446,7 @@ describe('useFetch', () => {
     });
   });
 
-  it.only('should returned dynamic queryKey in fetcher', async () => {
+  it('should returned dynamic queryKey in fetcher', async () => {
     const fetcherSpy = vi.fn().mockResolvedValue('ok');
     const id = ref(100);
 
@@ -465,6 +465,75 @@ describe('useFetch', () => {
       await vi.waitUntil(() => fetcherSpy.mock.calls.length === 2);
 
       expect(fetcherSpy).toBeCalledWith(['users', 200]);
+    });
+  });
+
+  it('should update local data immediately when `setData` is called with a value', () => {
+    const fetcherSpy = vi.fn().mockResolvedValue('ok');
+    const scope = effectScope();
+    scope.run(() => {
+      const queryClient = useQueryClient();
+      const { data, setData } = useFetch('test-key', fetcherSpy);
+
+      expect(data.value).toBeUndefined();
+
+      setData('new-data');
+
+      expect(data.value).toBe('new-data');
+      expect(queryClient.getEntry('test-key')?.data).toBe('new-data');
+    });
+  });
+
+  it('should update local data useing a fucntional updater', () => {
+    const fetcherSpy = vi.fn().mockResolvedValue('ok');
+    const scope = effectScope();
+
+    scope.run(() => {
+      const queryClient = useQueryClient();
+      const initialObj = { name: 'John', age: 25 };
+
+      const { data, setData } = useFetch('test-key', fetcherSpy, {
+        initialData: initialObj,
+      });
+
+      expect(data.value).toBeDefined();
+
+      setData((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          age: 26,
+        };
+      });
+
+      expect(data.value).toEqual({ name: 'John', age: 26 });
+      expect(data.value?.age).toBe(26);
+      expect(queryClient.getEntry('test-key')?.data).toEqual({
+        name: 'John',
+        age: 26,
+      });
+    });
+  });
+
+  it('should sync updates between two instances useing the same key', () => {
+    const fetcherSpy = vi.fn().mockResolvedValue('ok');
+    const scope = effectScope();
+
+    scope.run(async () => {
+      const { data: data1, setData: setData1 } = useFetch(
+        'test-key',
+        fetcherSpy
+      );
+
+      const { data: data2 } = useFetch('test-key', fetcherSpy);
+
+      expect(data1.value).toBeUndefined();
+      expect(data2.value).toBeUndefined();
+
+      setData1('shared-value');
+      expect(data1.value).toBe('shared-value');
+      await nextTick();
+      expect(data2.value).toBe('shared-value');
     });
   });
 });
