@@ -84,6 +84,7 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
     onSuccess,
     onSynced,
     refetchOnKeyChange = true,
+    keepPreviousData = false,
     enableAutoSyncCache = true,
   } = options;
 
@@ -262,14 +263,13 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
 
     const newData = func(prevData);
 
-    const selectedNewData = getSelectedData(newData);
-
-    data.value = selectedNewData;
-
-    if (data.value !== undefined) {
+    if (newData !== undefined) {
+      const selectedNewData = getSelectedData(newData);
+      data.value = selectedNewData;
       onSynced?.(data.value);
+    } else {
+      data.value = undefined;
     }
-
     queryClient.updateEntry<TData>(rawKey.value, func);
   };
 
@@ -326,9 +326,14 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
         isStale.value;
 
       if (shouldFetch) {
+        if (!keepPreviousData && isKeyChanged) {
+          data.value = undefined;
+        }
         internalFetch();
-      } else if (entry?.data !== undefined) {
-        data.value = getSelectedData(entry.data as TData);
+      } else {
+        if (entry?.data !== undefined) {
+          data.value = getSelectedData(entry.data as TData);
+        }
       }
     },
     { immediate: true }
@@ -345,9 +350,13 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
       const hasChanged = newData !== oldData || newUpdated !== oldUpdated;
 
       if (hasChanged) {
-        data.value = getSelectedData(newData as TData);
-        if (data.value !== undefined) {
+        if (newData !== undefined) {
+          data.value = getSelectedData(newData as TData);
           onSynced?.(data.value);
+        } else {
+          if (!keepPreviousData) {
+            data.value = undefined;
+          }
         }
       }
     }
