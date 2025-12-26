@@ -15,6 +15,8 @@ export class QueryClient {
   private gcTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 
   private listeners = new Set<QueryListener>();
+  private controllers = new Map<string, AbortController>();
+  private promises = new Map<string, Promise<any>>();
 
   public config: QueryClientConfig;
 
@@ -31,6 +33,33 @@ export class QueryClient {
     return () => {
       this.listeners.delete(listener);
     };
+  }
+
+  getOrCreateController(key: string) {
+    if (!this.controllers.has(key)) {
+      this.controllers.set(key, new AbortController());
+    }
+    return this.controllers.get(key)!;
+  }
+
+  cancelRequest(key: string) {
+    const controller = this.controllers.get(key);
+    if (controller) {
+      controller.abort();
+      this.controllers.delete(key);
+      this.promises.delete(key);
+    }
+  }
+
+  getPromise(key: string) {
+    return this.promises.get(key);
+  }
+  setPromise(key: string, promise: Promise<any>) {
+    this.promises.set(key, promise);
+  }
+  deletePromise(key: string) {
+    this.promises.delete(key);
+    this.controllers.delete(key);
   }
 
   private notify(type: QueryEventType, key: string, entry?: CacheEntry) {
