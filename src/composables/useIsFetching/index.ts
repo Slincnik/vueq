@@ -14,35 +14,39 @@ export function useIsFetching(filters: UseIsFetchingFilters = {}) {
 
   return computed(() => {
     const queryKey = toValue(filters.queryKey);
-    const allEntries = Object.entries(cache.entries);
 
-    if (!allEntries.length) return 0;
+    if (cache.entries.size === 0) return 0;
 
     if (queryKey === undefined) {
-      return allEntries.reduce((count, [, entry]) => {
-        return entry.fetchStatus === 'fetching' ? count + 1 : count;
-      }, 0);
+      let count = 0;
+      for (const entry of cache.entries.values()) {
+        if (entry.fetchStatus === 'fetching') count++;
+      }
+      return count;
     }
 
     const targetKey = serializeKey(queryKey);
 
     const arrayPrefix =
-      targetKey.endsWith(']') && targetKey.startsWith('[')
+      targetKey.startsWith('[') && targetKey.endsWith(']')
         ? targetKey.slice(0, -1) + ','
-        : targetKey + ',';
+        : null;
 
-    return allEntries.reduce((count, [key, entry]) => {
-      if (entry.fetchStatus !== 'fetching') return count;
+    let count = 0;
+
+    for (const [key, entry] of cache.entries) {
+      if (entry.fetchStatus !== 'fetching') continue;
 
       if (key === targetKey) {
-        return count + 1;
+        count++;
+        continue;
       }
 
-      if (key.startsWith(arrayPrefix)) {
-        return count + 1;
+      if (arrayPrefix && key.startsWith(arrayPrefix)) {
+        count++;
       }
+    }
 
-      return count;
-    }, 0);
+    return count;
   });
 }

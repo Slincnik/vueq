@@ -145,7 +145,8 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
     partial: Partial<typeof currentEntry.value>,
     newKey?: string
   ) => {
-    const entry = queryClient.entries[newKey ?? key.value];
+    const targetKey = newKey ?? key.value;
+    const entry = queryClient.entries.get(targetKey);
     if (entry) {
       queryClient.setEntry(key.value, { ...entry, ...partial });
     }
@@ -180,7 +181,7 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
       updateEntry(
         {
           fetchStatus: 'fetching',
-          error: 'null',
+          error: null,
         },
         fetchKey
       );
@@ -340,8 +341,8 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
 
   watch(
     () => [
-      queryClient.entries[key.value]?.data,
-      queryClient.entries[key.value]?.updatedAt,
+      queryClient.entries.get(key.value)?.data,
+      queryClient.entries.get(key.value)?.updatedAt,
     ],
     ([newData, newUpdated], [oldData, oldUpdated]) => {
       if (!enableAutoSyncCache) return;
