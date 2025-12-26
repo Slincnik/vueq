@@ -51,8 +51,6 @@ async function runFetcher<T>(
   throw lastError;
 }
 
-const requestPromises = new Map<string, Promise<void>>();
-
 // @ts-nocheck
 export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
   queryKey: string | readonly any[] | MaybeRefOrGetter<string | readonly any[]>,
@@ -153,25 +151,20 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
     }
   };
 
-  let abortController: AbortController | undefined;
-
   async function internalFetch(force = false) {
     const fetchKey = key.value;
     if (!isEnabled.value && !force) return;
 
-    if (
-      requestPromises.has(fetchKey) &&
-      currentEntry.value?.fetchStatus === 'fetching'
-    ) {
-      return requestPromises.get(fetchKey);
+    const existingPromise = queryClient.getPromise(fetchKey);
+    if (existingPromise && currentEntry.value?.fetchStatus === 'fetching') {
+      return existingPromise;
     }
 
     const entry = queryClient.getEntry(fetchKey);
 
     if (!force && !isStale.value) return;
 
-    abortController?.abort();
-    abortController = new AbortController();
+    const controller = queryClient.getOrCreateController(fetchKey);
 
     if (!entry) {
       queryClient.setEntry(fetchKey, {
@@ -196,7 +189,7 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
     const promise = (async () => {
       try {
         const result = await runFetcher(
-          () => fetcher(abortController?.signal, rawKey.value),
+          () => fetcher(controller.signal, rawKey.value),
           retry,
           retryDelay
         );
@@ -219,6 +212,10 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
         successEvent.trigger(selected);
         queryClient.config.queries?.onSuccess?.(selected, fetchKey);
       } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') {
+          console.debug(`Request aborted for key ${fetchKey}`);
+          return;
+        }
         updateEntry(
           {
             status: 'error',
@@ -231,7 +228,7 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
         errorEvent.trigger(err as TError);
         queryClient.config.queries?.onError?.(err, fetchKey);
       } finally {
-        requestPromises.delete(fetchKey);
+        queryClient.deletePromise(fetchKey);
         onSettled?.(data.value, error.value);
         settledEvent.trigger(data.value, error.value);
         queryClient.config.queries?.onSettled?.(
@@ -242,7 +239,7 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
       }
     })();
 
-    requestPromises.set(fetchKey, promise);
+    queryClient.setPromise(fetchKey, promise);
     return promise;
   }
 
@@ -369,13 +366,13 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
     if (!k) return;
     const entry = queryClient.getEntry(k);
     if (entry) {
-      queryClient.updateSubscribers(
-        k,
-        Math.max(0, entry.subscribers - 1),
-        cacheTime
-      );
+      const newCount = Math.max(0, entry.subscribers - 1);
+      queryClient.updateSubscribers(k, newCount, cacheTime);
+
+      if (newCount === 0) {
+        queryClient.cancelRequest(k);
+      }
     }
-    abortController?.abort();
   });
 
   return {
