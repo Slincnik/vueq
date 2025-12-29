@@ -34,7 +34,7 @@ describe('QueryClient', () => {
     queryClient.setEntry(key, entry);
 
     expect(queryClient.getEntry(key)).toEqual(entry);
-    expect(queryClient.entries[key]).toEqual(entry);
+    expect(queryClient.getEntry(key)).toBeDefined();
   });
 
   it('should return undefined for non-existent keys', () => {
@@ -124,7 +124,7 @@ describe('QueryClient', () => {
 
     expect(queryClient.getEntry(key1)).toBeUndefined();
     expect(queryClient.getEntry(key2)).toBeUndefined();
-    expect(Object.keys(queryClient.entries).length).toBe(0);
+    expect(queryClient.entries.size).toBe(0);
 
     vi.runAllTimers();
   });

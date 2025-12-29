@@ -28,13 +28,13 @@ export const VueQDevtools: Plugin = {
 
         api.on.getInspectorTree((payload) => {
           if (payload.inspectorId === INSPECTOR_ID) {
-            const queries = Object.keys(queryClient.entries);
+            const queries = Array.from(queryClient.entries.keys());
             const filter = payload.filter?.toLowerCase();
 
             payload.rootNodes = queries
               .filter((key) => !filter || key.toLowerCase().includes(filter))
               .map((key) => {
-                const entry = queryClient.getEntry(key);
+                const entry = queryClient.entries.get(key);
                 if (!entry) return { id: key, label: key };
 
                 return {
@@ -73,7 +73,7 @@ export const VueQDevtools: Plugin = {
 
         api.on.getInspectorState((payload) => {
           if (payload.inspectorId === INSPECTOR_ID) {
-            const entry = queryClient.getEntry(payload.nodeId);
+            const entry = queryClient.entries.get(payload.nodeId);
 
             if (!entry) {
               payload.state = {
