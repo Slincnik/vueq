@@ -362,6 +362,15 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
     }
   );
 
+  watch(
+    () => currentEntry.value?.updatedAt,
+    (newUpdatedAt) => {
+      if (newUpdatedAt === 0 && isEnabled.value) {
+        internalFetch();
+      }
+    }
+  );
+
   onScopeDispose(() => {
     const k = lastSubscribedKey;
     if (!k) return;
