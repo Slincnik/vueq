@@ -154,7 +154,11 @@ export class QueryClient {
     const entry = this.entries.get(sKey);
     if (!entry) return;
 
-    this.entries.set(sKey, { ...entry, updatedAt: 0 });
+    const newEntry = { ...entry, updatedAt: 0 };
+
+    this.entries.set(sKey, newEntry);
+
+    this.notify('updated', sKey, newEntry);
   }
 
   clear() {
