@@ -24,6 +24,25 @@ export class QueryClient {
     this.config = config;
   }
 
+  private isMatch(entryKeyRaw: any, filterKeyRaw: any): boolean {
+    const sEntry = serializeKey(entryKeyRaw);
+    const sFilter = serializeKey(filterKeyRaw);
+
+    if (sEntry === sFilter) {
+      return true;
+    }
+
+    if (Array.isArray(filterKeyRaw) && Array.isArray(entryKeyRaw)) {
+      if (filterKeyRaw.length > entryKeyRaw.length) return false;
+      return filterKeyRaw.every((filterItem, index) => {
+        const entryItem = entryKeyRaw[index];
+        return serializeKey(filterItem) === serializeKey(entryItem);
+      });
+    }
+
+    return false;
+  }
+
   /**
    * Subscribe to cache changes.
    * Useful for DevTools or custom loggers.
@@ -70,13 +89,16 @@ export class QueryClient {
     return this.entries.get(serializeKey(key)) as CacheEntry<T> | undefined;
   }
 
-  setEntry<T>(key: string | readonly any[], data: CacheEntry<T>) {
+  setEntry<T>(
+    key: string | readonly any[],
+    data: Omit<CacheEntry<T>, 'rawKey'>
+  ) {
     const sKey = serializeKey(key);
     const isNew = !this.entries.has(sKey);
 
-    this.entries.set(sKey, data);
+    this.entries.set(sKey, { rawKey: key, ...data });
 
-    this.notify(isNew ? 'added' : 'updated', sKey, data);
+    this.notify(isNew ? 'added' : 'updated', sKey, { rawKey: key, ...data });
   }
 
   removeEntry(key: string | readonly any[]) {
@@ -149,6 +171,25 @@ export class QueryClient {
     });
   }
 
+  updateEntries<T>(
+    filters: string | readonly any[],
+    updated: (old: T | undefined) => T | undefined
+  ) {
+    this.entries.forEach((entry) => {
+      if (this.isMatch(entry.rawKey, filters)) {
+        const prevData = entry.data as T | undefined;
+        const newData = updated(prevData);
+
+        this.setEntry(entry.rawKey, {
+          ...entry,
+          data: newData,
+          status: newData !== undefined ? 'success' : 'pending',
+          updatedAt: Date.now(),
+        });
+      }
+    });
+  }
+
   invalidateQuery(key: string | readonly any[]) {
     const sKey = serializeKey(key);
     const entry = this.entries.get(sKey);
@@ -159,6 +200,16 @@ export class QueryClient {
     this.entries.set(sKey, newEntry);
 
     this.notify('updated', sKey, newEntry);
+  }
+
+  invalidateQueries(key: string | readonly any[]) {
+    this.entries.forEach((entry, sKey) => {
+      if (this.isMatch(entry.rawKey, key)) {
+        const newEntry = { ...entry, updatedAt: 0 };
+        this.entries.set(sKey, newEntry);
+        this.notify('updated', sKey, newEntry);
+      }
+    });
   }
 
   clear() {

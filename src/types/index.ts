@@ -51,6 +51,7 @@ export interface UseQueryOptions<TData, TSelected = TData> {
 }
 
 export interface CacheEntry<TData = unknown> {
+  rawKey: string | readonly any[];
   data: TData | undefined;
   error: unknown | undefined;
   updatedAt: number;

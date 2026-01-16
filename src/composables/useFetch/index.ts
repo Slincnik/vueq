@@ -62,10 +62,13 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
 ): UseFetchReturn<TData, TError, TSelected> {
   const queryClient = useQueryClient();
   const rawKey = computed(() => {
-    if (Array.isArray(queryKey)) {
-      return queryKey.map((item) => toValue(item));
+    const val = toValue(queryKey);
+
+    if (Array.isArray(val)) {
+      return val.map((item) => toValue(item));
     }
-    return toValue(queryKey);
+
+    return val;
   });
   const key = computed(() => serializeKey(rawKey.value));
   let lastSubscribedKey: string | null = null;
@@ -141,19 +144,17 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
     return now.value - entry.updatedAt >= staleTime;
   });
 
-  const updateEntry = (
-    partial: Partial<typeof currentEntry.value>,
-    newKey?: string
-  ) => {
-    const targetKey = newKey ?? key.value;
-    const entry = queryClient.entries.get(targetKey);
+  const updateEntry = (partial: Partial<typeof currentEntry.value>) => {
+    const entry = queryClient.entries.get(key.value);
     if (entry) {
-      queryClient.setEntry(key.value, { ...entry, ...partial });
+      queryClient.setEntry(rawKey.value, { ...entry, ...partial });
     }
   };
 
   async function internalFetch(force = false) {
     const fetchKey = key.value;
+    const fetchRawKey = rawKey.value;
+
     if (!isEnabled.value && !force) return;
 
     const existingPromise = queryClient.getPromise(fetchKey);
@@ -168,7 +169,7 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
     const controller = queryClient.getOrCreateController(fetchKey);
 
     if (!entry) {
-      queryClient.setEntry(fetchKey, {
+      queryClient.setEntry(fetchRawKey, {
         data: undefined,
         error: null,
         status: 'pending',
@@ -178,26 +179,23 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
         subscribers: 1,
       });
     } else {
-      updateEntry(
-        {
-          fetchStatus: 'fetching',
-          error: null,
-        },
-        fetchKey
-      );
+      updateEntry({
+        fetchStatus: 'fetching',
+        error: null,
+      });
     }
 
     const promise = (async () => {
       try {
         const result = await runFetcher(
-          () => fetcher(controller.signal, rawKey.value),
+          () => fetcher(controller.signal, fetchRawKey),
           retry,
           retryDelay
         );
 
-        // Успех
         const prevEntry = queryClient.getEntry(fetchKey);
-        queryClient.setEntry(fetchKey, {
+
+        queryClient.setEntry(fetchRawKey, {
           ...prevEntry!,
           data: result,
           error: null,
@@ -217,14 +215,11 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
           console.debug(`Request aborted for key ${fetchKey}`);
           return;
         }
-        updateEntry(
-          {
-            status: 'error',
-            fetchStatus: 'idle',
-            error: err as TError,
-          },
-          fetchKey
-        );
+        updateEntry({
+          status: 'error',
+          fetchStatus: 'idle',
+          error: err as TError,
+        });
         onError?.(err);
         errorEvent.trigger(err as TError);
         queryClient.config.queries?.onError?.(err, fetchKey);
@@ -253,7 +248,7 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
   const setData = (
     updater: TData | ((prev?: Readonly<TData>) => TData | undefined)
   ) => {
-    const entry = queryClient.getEntry(rawKey.value);
+    const entry = queryClient.getEntry(key.value);
     const prevData = entry?.data as TData | undefined;
     const func =
       typeof updater === 'function'
@@ -288,7 +283,7 @@ export function useFetch<TData = unknown, TError = unknown, TSelected = TData>(
         lastSubscribedKey = newKey;
         const entry = queryClient.getEntry(newKey);
         if (!entry) {
-          queryClient.setEntry(newKey, {
+          queryClient.setEntry(rawKey.value, {
             data: initialData,
             error: null,
             status: initialData !== undefined ? 'success' : 'pending',
